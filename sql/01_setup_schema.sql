@@ -1,0 +1,27 @@
+USE DATABASE DATA_ENGINEER_EXERCISE_ABD_DB;
+USE WAREHOUSE COMPUTE_WH;
+
+CREATE SCHEMA IF NOT EXISTS RAW;
+USE SCHEMA RAW;
+
+-- File format for standard CSVs
+CREATE OR REPLACE FILE FORMAT csv_format
+  TYPE = 'CSV'
+  FIELD_DELIMITER = ','
+  FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+  SKIP_HEADER = 1
+  ESCAPE_UNENCLOSED_FIELD = NONE
+  NULL_IF = ('');
+
+-- File format for forms_raw.csv (multiline JSON in a quoted CSV field)
+CREATE OR REPLACE FILE FORMAT csv_json_format
+  TYPE = 'CSV'
+  FIELD_DELIMITER = ','
+  FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+  SKIP_HEADER = 1
+  ESCAPE_UNENCLOSED_FIELD = NONE
+  NULL_IF = ('');
+
+-- Internal stage for CSV uploads
+CREATE OR REPLACE STAGE csv_stage
+  FILE_FORMAT = csv_format;

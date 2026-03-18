@@ -1,0 +1,62 @@
+USE DATABASE DATA_ENGINEER_EXERCISE_ABD_DB;
+USE SCHEMA RAW;
+
+CREATE OR REPLACE VIEW V_POTENTIAL_DUPLICATE_CLIENTS AS
+WITH all_names AS (
+  -- Client names (open clients only, deduplicated)
+  SELECT DISTINCT
+    CASE_ID AS CLIENT_CASE_ID,
+    LOWER(TRIM(FIRST_NAME)) AS FIRST_NAME,
+    LOWER(TRIM(LAST_NAME)) AS LAST_NAME,
+    'client' AS NAME_SOURCE
+  FROM CASE_CLIENT
+  WHERE LOWER(CLOSED) = 'false'
+    AND TRIM(COALESCE(FIRST_NAME, '')) != ''
+    AND TRIM(COALESCE(LAST_NAME, '')) != ''
+
+  UNION ALL
+
+  -- Alias names (include orphaned aliases; exclude aliases whose parent is closed)
+  SELECT DISTINCT
+    a.PARENT_CASE_ID AS CLIENT_CASE_ID,
+    LOWER(TRIM(a.FIRST_NAME)) AS FIRST_NAME,
+    LOWER(TRIM(a.LAST_NAME)) AS LAST_NAME,
+    'alias' AS NAME_SOURCE
+  FROM CASE_ALIAS a
+  LEFT JOIN CASE_CLIENT c ON c.CASE_ID = a.PARENT_CASE_ID
+  WHERE (c.CASE_ID IS NULL OR LOWER(c.CLOSED) = 'false')
+    AND TRIM(COALESCE(a.FIRST_NAME, '')) != ''
+    AND TRIM(COALESCE(a.LAST_NAME, '')) != ''
+),
+duplicate_pairs AS (
+  SELECT
+    a.CLIENT_CASE_ID AS CLIENT_A_CASE_ID,
+    a.FIRST_NAME || ' ' || a.LAST_NAME AS CLIENT_A_NAME,
+    a.NAME_SOURCE AS CLIENT_A_NAME_SOURCE,
+    b.CLIENT_CASE_ID AS CLIENT_B_CASE_ID,
+    b.FIRST_NAME || ' ' || b.LAST_NAME AS CLIENT_B_NAME,
+    b.NAME_SOURCE AS CLIENT_B_NAME_SOURCE,
+    CASE
+      WHEN a.FIRST_NAME = b.FIRST_NAME AND a.LAST_NAME = b.LAST_NAME
+        THEN 'exact'
+      ELSE 'fuzzy'
+    END AS MATCH_TYPE
+  FROM all_names a
+  JOIN all_names b
+    ON a.CLIENT_CASE_ID < b.CLIENT_CASE_ID
+    AND (
+      -- Exact match
+      (a.FIRST_NAME = b.FIRST_NAME AND a.LAST_NAME = b.LAST_NAME)
+      OR
+      -- Fuzzy match (min name length 3 to reduce false positives)
+      (
+        LENGTH(a.FIRST_NAME) >= 3 AND LENGTH(b.FIRST_NAME) >= 3
+        AND LENGTH(a.LAST_NAME) >= 3 AND LENGTH(b.LAST_NAME) >= 3
+        AND EDITDISTANCE(a.FIRST_NAME, b.FIRST_NAME) <= 2
+        AND EDITDISTANCE(a.LAST_NAME, b.LAST_NAME) <= 2
+      )
+    )
+)
+SELECT DISTINCT *
+FROM duplicate_pairs
+ORDER BY CLIENT_A_CASE_ID, CLIENT_B_CASE_ID;
