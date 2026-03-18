@@ -86,13 +86,19 @@ Tracks how each client's `current_status` changes over time.
 
 Flags potential duplicate clients by comparing names across client and alias records.
 
+**Data notes:**
+- Many aliases in `CASE_ALIAS` reference `PARENT_CASE_ID` values not present in `CASE_CLIENT`. These orphaned aliases are included in duplicate detection using a LEFT JOIN — their names are still valid for matching even if the parent client isn't in this dataset.
+- NULL or empty `FIRST_NAME`/`LAST_NAME` values are excluded from the unified name list to avoid spurious matches.
+- The `CLOSED = 'false'` filter applies to `CASE_CLIENT` records. Aliases whose parent client is closed are also excluded (via the join). Orphaned aliases (no matching parent) are included since we cannot determine their closed status.
+
 **Logic:**
-1. Build a unified name list: client `FIRST_NAME`/`LAST_NAME` from `CASE_CLIENT` (where `CLOSED = 'false'`) unioned with alias `FIRST_NAME`/`LAST_NAME` from `CASE_ALIAS` (mapped back to their parent client via `PARENT_CASE_ID`)
-2. Self-join excluding same-client pairs
-3. Flag as potential duplicate where:
+1. Build a unified name list: client `FIRST_NAME`/`LAST_NAME` from `CASE_CLIENT` (where `CLOSED = 'false'`) unioned with alias `FIRST_NAME`/`LAST_NAME` from `CASE_ALIAS` (with resolved `CLIENT_CASE_ID` = `PARENT_CASE_ID` or the alias's own parent if orphaned)
+2. Exclude rows where `FIRST_NAME` or `LAST_NAME` is NULL or empty
+3. Self-join excluding same-client pairs
+4. Flag as potential duplicate where:
    - Exact match on `LOWER(FIRST_NAME)` and `LOWER(LAST_NAME)`, OR
-   - `EDITDISTANCE(LOWER(first), LOWER(other_first)) <= 2` AND `EDITDISTANCE(LOWER(last), LOWER(other_last)) <= 2`
-4. Deduplicate pairs (A,B) = (B,A)
+   - `EDITDISTANCE(LOWER(first), LOWER(other_first)) <= 2` AND `EDITDISTANCE(LOWER(last), LOWER(other_last)) <= 2`, with a minimum name length of 3 characters to avoid false positives on very short names
+5. Deduplicate pairs (A,B) = (B,A)
 
 **Output columns:**
 
